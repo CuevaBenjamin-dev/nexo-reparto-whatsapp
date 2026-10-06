@@ -1,0 +1,15 @@
+{
+  "name": "reparto-whatsapp",
+  "private": true,
+  "workspaces": ["apps/api", "apps/web"],
+  "scripts": {
+    "build": "npm run build -w apps/api && npm run build -w apps/web",
+    "test": "npm run test -w apps/api",
+    "lint": "npm run lint -w apps/api && npm run lint -w apps/web",
+    "format": "prettier --write \"apps/**/*.{ts,tsx,css,json}\" \"docs/**/*.md\"",
+    "prisma:generate": "npm run prisma:generate -w apps/api",
+    "prisma:migrate": "npm run prisma:migrate -w apps/api",
+    "seed": "npm run seed -w apps/api"
+  },
+  "devDependencies": {"prettier": "^3.6.2"}
+}

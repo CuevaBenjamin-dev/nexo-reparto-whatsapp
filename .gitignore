@@ -1,0 +1,12 @@
+node_modules/
+.next/
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.log
+apps/api/prisma/*.db
+apps/api/generated/
+AVANCE.md

@@ -1,0 +1,219 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Rol {
+  ADMIN
+  SUPERVISOR
+  RRHH
+  ASESOR
+}
+enum EstadoConversacion {
+  ESPERANDO_OPCION
+  PENDIENTE_ASIGNACION
+  ABIERTA
+  CERRADA
+}
+enum DireccionMensaje {
+  ENTRANTE
+  SALIENTE
+}
+enum TipoMensaje {
+  TEXTO
+  INTERACTIVO
+  IMAGEN
+  DOCUMENTO
+  AUDIO
+  VIDEO
+  UBICACION
+}
+enum EstadoEnvio {
+  PENDIENTE
+  ENVIADO
+  ENTREGADO
+  LEIDO
+  FALLIDO
+}
+enum TipoAsignacion {
+  AUTOMATICA
+  MANUAL
+  REASIGNACION
+}
+enum EstadoEvento {
+  PENDIENTE
+  PROCESANDO
+  PROCESADO
+  FALLIDO
+}
+
+model Usuario {
+  id                    Int       @id @default(autoincrement())
+  nombre                String
+  apellido              String
+  correo                String    @unique
+  passwordHash          String    @map("password_hash")
+  rol                   Rol
+  activo                Boolean   @default(true)
+  debeCambiarContrasena Boolean   @default(false) @map("debe_cambiar_contrasena")
+  fechaCreacion         DateTime  @default(now()) @map("fecha_creacion")
+  fechaActualizacion    DateTime  @updatedAt @map("fecha_actualizacion")
+  asesor                Asesor?
+  sesiones              Sesion[]
+  asignaciones          Asignacion[]
+  auditorias            Auditoria[]
+  @@map("usuarios")
+}
+
+model Sesion {
+  id             String   @id @default(uuid()) @db.Uuid
+  usuarioId      Int      @map("usuario_id")
+  tokenHash      String   @unique @map("token_hash")
+  venceEn        DateTime @map("vence_en")
+  fechaCreacion  DateTime @default(now()) @map("fecha_creacion")
+  usuario        Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  @@index([usuarioId, venceEn])
+  @@map("sesiones")
+}
+
+model Grupo {
+  id                 Int              @id @default(autoincrement())
+  nombre             String           @unique
+  descripcion        String?
+  activo             Boolean          @default(true)
+  fechaCreacion      DateTime         @default(now()) @map("fecha_creacion")
+  fechaActualizacion DateTime         @updatedAt @map("fecha_actualizacion")
+  asesores           Asesor[]
+  opciones           OpcionWhatsapp[]
+  conversaciones     Conversacion[]
+  asignaciones       Asignacion[]
+  @@map("grupos")
+}
+
+model Asesor {
+  id                 Int            @id @default(autoincrement())
+  usuarioId          Int            @unique @map("usuario_id")
+  grupoId            Int            @map("grupo_id")
+  activoReparto      Boolean        @default(true) @map("activo_reparto")
+  contadorReparto    Int            @default(0) @map("contador_reparto")
+  totalAsignaciones  Int            @default(0) @map("total_asignaciones")
+  fechaCreacion      DateTime       @default(now()) @map("fecha_creacion")
+  fechaActualizacion DateTime       @updatedAt @map("fecha_actualizacion")
+  usuario            Usuario        @relation(fields: [usuarioId], references: [id])
+  grupo              Grupo          @relation(fields: [grupoId], references: [id])
+  conversaciones     Conversacion[]
+  asignaciones       Asignacion[]
+  @@index([grupoId, activoReparto, contadorReparto])
+  @@map("asesores")
+}
+
+model OpcionWhatsapp {
+  id                    Int      @id @default(autoincrement())
+  titulo                String
+  descripcion           String?
+  identificadorExterno  String   @unique @map("identificador_externo")
+  grupoId               Int      @map("grupo_id")
+  activo                Boolean  @default(true)
+  orden                 Int      @default(0)
+  fechaCreacion         DateTime @default(now()) @map("fecha_creacion")
+  fechaActualizacion    DateTime @updatedAt @map("fecha_actualizacion")
+  grupo                 Grupo    @relation(fields: [grupoId], references: [id])
+  @@index([activo, orden])
+  @@map("opciones_whatsapp")
+}
+
+model Contacto {
+  id                 Int            @id @default(autoincrement())
+  telefono           String         @unique
+  nombre             String?
+  waId               String         @unique @map("wa_id")
+  fechaCreacion      DateTime       @default(now()) @map("fecha_creacion")
+  fechaActualizacion DateTime       @updatedAt @map("fecha_actualizacion")
+  conversaciones     Conversacion[]
+  @@map("contactos")
+}
+
+model Conversacion {
+  id                 Int                @id @default(autoincrement())
+  contactoId         Int                @map("contacto_id")
+  grupoId            Int?               @map("grupo_id")
+  asesorId           Int?               @map("asesor_id")
+  estado             EstadoConversacion @default(ESPERANDO_OPCION)
+  fechaInicio        DateTime           @default(now()) @map("fecha_inicio")
+  fechaCierre        DateTime?          @map("fecha_cierre")
+  fechaUltimoMensaje DateTime           @default(now()) @map("fecha_ultimo_mensaje")
+  fechaCreacion      DateTime           @default(now()) @map("fecha_creacion")
+  fechaActualizacion DateTime           @updatedAt @map("fecha_actualizacion")
+  contacto           Contacto           @relation(fields: [contactoId], references: [id])
+  grupo              Grupo?             @relation(fields: [grupoId], references: [id])
+  asesor             Asesor?            @relation(fields: [asesorId], references: [id])
+  mensajes           Mensaje[]
+  asignaciones       Asignacion[]
+  @@index([asesorId, estado, fechaUltimoMensaje])
+  @@index([contactoId, estado])
+  @@index([grupoId, estado])
+  @@map("conversaciones")
+}
+
+model Mensaje {
+  id                  Int              @id @default(autoincrement())
+  conversacionId      Int              @map("conversacion_id")
+  idExternoWhatsapp   String?          @unique @map("id_externo_whatsapp")
+  direccion           DireccionMensaje
+  tipo                TipoMensaje      @default(TEXTO)
+  contenido           String
+  estadoEnvio         EstadoEnvio?     @map("estado_envio")
+  fechaWhatsapp       DateTime?        @map("fecha_whatsapp")
+  fechaCreacion       DateTime         @default(now()) @map("fecha_creacion")
+  conversacion        Conversacion     @relation(fields: [conversacionId], references: [id])
+  @@index([conversacionId, fechaCreacion])
+  @@map("mensajes")
+}
+
+model Asignacion {
+  id                   Int            @id @default(autoincrement())
+  conversacionId       Int            @map("conversacion_id")
+  asesorId             Int            @map("asesor_id")
+  grupoId              Int            @map("grupo_id")
+  tipo                 TipoAsignacion
+  asignadoPorUsuarioId Int?           @map("asignado_por_usuario_id")
+  motivo               String?
+  fechaCreacion        DateTime       @default(now()) @map("fecha_creacion")
+  conversacion         Conversacion   @relation(fields: [conversacionId], references: [id])
+  asesor               Asesor         @relation(fields: [asesorId], references: [id])
+  grupo                Grupo          @relation(fields: [grupoId], references: [id])
+  asignadoPor          Usuario?       @relation(fields: [asignadoPorUsuarioId], references: [id])
+  @@index([conversacionId, fechaCreacion])
+  @@map("asignaciones")
+}
+
+model EventoWhatsapp {
+  id                   Int          @id @default(autoincrement())
+  identificadorExterno String       @unique @map("identificador_externo")
+  tipo                 String
+  payload              Json
+  estado               EstadoEvento @default(PENDIENTE)
+  intentos             Int          @default(0)
+  error                String?
+  fechaCreacion        DateTime     @default(now()) @map("fecha_creacion")
+  fechaActualizacion   DateTime     @updatedAt @map("fecha_actualizacion")
+  @@index([estado, fechaCreacion])
+  @@map("eventos_whatsapp")
+}
+
+model Auditoria {
+  id          Int      @id @default(autoincrement())
+  usuarioId   Int?     @map("usuario_id")
+  accion      String
+  entidad     String
+  entidadId   String   @map("entidad_id")
+  datos       Json?
+  fecha       DateTime @default(now())
+  usuario     Usuario? @relation(fields: [usuarioId], references: [id])
+  @@index([fecha])
+  @@map("auditoria")
+}

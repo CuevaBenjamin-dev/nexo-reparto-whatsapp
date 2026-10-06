@@ -1,0 +1,5 @@
+import type { Metadata } from 'next';
+import './globals.css';
+
+export const metadata: Metadata = { title: 'Nexo · Atención comercial', description: 'Bandeja centralizada de WhatsApp' };
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) { return <html lang="es"><body>{children}</body></html>; }
