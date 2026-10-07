@@ -71,6 +71,15 @@ export class CanalesWhatsappController {
     if (canal.tipo === 'REPARTIDOR' && canal.asesorId) throw new BadRequestException('El repartidor no lleva asesor');
     if (canal.tipo === 'ASESOR' && canal.activo && !canal.asesorId) throw new BadRequestException('Asocia un asesor antes de activar el canal');
     if (canal.activo && (!canal.numeroVisible || !canal.phoneNumberId || canal.estadoIntegracion !== 'ACTIVO')) throw new BadRequestException('Configura número, Phone Number ID y estado ACTIVO antes de activar');
+    console.log(JSON.stringify({
+      evento: 'debug_validar_canal',
+      id,
+      tipo: canal.tipo,
+      activo: canal.activo,
+      tieneNumeroVisible: Boolean(canal.numeroVisible),
+      tienePhoneNumberId: Boolean(canal.phoneNumberId),
+      estadoIntegracion: canal.estadoIntegracion
+    }));
     if (canal.asesorId && !await tx.asesor.findUnique({ where: { id: canal.asesorId } })) throw new BadRequestException('Asesor inexistente');
     if (canal.activo) {
       const conflicto = await tx.canalWhatsapp.findFirst({ where: { activo: true, id: { not: id }, ...(canal.tipo === 'REPARTIDOR' ? { tipo: 'REPARTIDOR' } : { tipo: 'ASESOR', asesorId: canal.asesorId }) } });
