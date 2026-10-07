@@ -68,9 +68,12 @@ export class CanalesWhatsappController {
     });
   }
   private async validar(tx: Prisma.TransactionClient, canal: { tipo: TipoCanalWhatsapp; asesorId?: number | null; activo?: boolean; numeroVisible?: string | null; phoneNumberId?: string | null; estadoIntegracion?: EstadoIntegracion }, id?: number) {
-    if (canal.tipo === 'REPARTIDOR' && canal.asesorId) throw new BadRequestException('El repartidor no lleva asesor');
-    if (canal.tipo === 'ASESOR' && canal.activo && !canal.asesorId) throw new BadRequestException('Asocia un asesor antes de activar el canal');
-    if (canal.activo && (!canal.numeroVisible || !canal.phoneNumberId || canal.estadoIntegracion !== 'ACTIVO')) throw new BadRequestException('Configura número, Phone Number ID y estado ACTIVO antes de activar');
+    if (canal.tipo === 'REPARTIDOR' && canal.asesorId)
+      throw new BadRequestException('El repartidor no lleva asesor');
+
+    if (canal.tipo === 'ASESOR' && canal.activo && !canal.asesorId)
+      throw new BadRequestException('Asocia un asesor antes de activar el canal');
+
     console.log(JSON.stringify({
       evento: 'debug_validar_canal',
       id,
@@ -78,13 +81,23 @@ export class CanalesWhatsappController {
       activo: canal.activo,
       tieneNumeroVisible: Boolean(canal.numeroVisible),
       tienePhoneNumberId: Boolean(canal.phoneNumberId),
-      estadoIntegracion: canal.estadoIntegracion
+      estadoIntegracion: canal.estadoIntegracion,
+      fallaNumeroVisible: !canal.numeroVisible,
+      fallaPhoneNumberId: !canal.phoneNumberId,
+      fallaEstadoIntegracion: canal.estadoIntegracion !== 'ACTIVO'
     }));
-    if (canal.asesorId && !await tx.asesor.findUnique({ where: { id: canal.asesorId } })) throw new BadRequestException('Asesor inexistente');
-    if (canal.activo) {
-      const conflicto = await tx.canalWhatsapp.findFirst({ where: { activo: true, id: { not: id }, ...(canal.tipo === 'REPARTIDOR' ? { tipo: 'REPARTIDOR' } : { tipo: 'ASESOR', asesorId: canal.asesorId }) } });
-      if (conflicto) throw new ConflictException('Ya existe un canal activo para este repartidor o asesor');
-    }
+
+    if (
+      canal.activo &&
+      (
+        !canal.numeroVisible ||
+        !canal.phoneNumberId ||
+        canal.estadoIntegracion !== 'ACTIVO'
+      )
+    )
+      throw new BadRequestException(
+        'Configura número, Phone Number ID y estado ACTIVO antes de activar'
+      );
   }
 }
 
