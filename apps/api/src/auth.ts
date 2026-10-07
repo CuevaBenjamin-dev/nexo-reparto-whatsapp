@@ -66,7 +66,16 @@ export class AuthController {
     await this.intentos.limpiar(origen, dto.correo);
     const token = randomBytes(32).toString('hex');
     await this.db.sesion.create({ data: { usuarioId: usuario.id, tokenHash: createHmac('sha256', this.config.authSecret).update(token).digest('hex'), venceEn: new Date(Date.now() + 8 * 60 * 60 * 1000) } });
-    res.cookie('sesion', token, { signed: true, httpOnly: true, secure: this.config.nodeEnv === 'production', sameSite: 'strict', maxAge: 8 * 60 * 60 * 1000, path: '/' });
+    const esProduccion = this.config.nodeEnv === 'production';
+
+    res.cookie('sesion', token, {
+      signed: true,
+      httpOnly: true,
+      secure: esProduccion,
+      sameSite: esProduccion ? 'none' : 'lax',
+      maxAge: 8 * 60 * 60 * 1000,
+      path: '/',
+    });
     return { id: usuario.id, nombre: usuario.nombre, apellido: usuario.apellido, correo: usuario.correo, rol: usuario.rol, asesorId: usuario.asesor?.id };
   }
 
@@ -74,7 +83,13 @@ export class AuthController {
   async logout(@Req() req: SolicitudAutenticada, @Res({ passthrough: true }) res: Response) {
     const token = req.signedCookies?.sesion as string;
     await this.db.sesion.deleteMany({ where: { tokenHash: createHmac('sha256', this.config.authSecret).update(token).digest('hex') } });
-    res.clearCookie('sesion', { path: '/' });
+    const esProduccion = this.config.nodeEnv === 'production';
+
+    res.clearCookie('sesion', {
+      path: '/',
+      secure: esProduccion,
+      sameSite: esProduccion ? 'none' : 'lax',
+    });
     return { ok: true };
   }
 
