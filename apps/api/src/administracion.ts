@@ -6,6 +6,7 @@ import { BaseDatos } from './base-datos';
 import { Roles, UsuarioActual, UsuarioSesion } from './auth';
 import { ServicioReparto } from './reparto';
 import { Configuracion } from './config';
+import { filtroCanalOperativo } from './canales-operativos';
 
 class GrupoDto { @IsString() @MaxLength(100) nombre!: string; @IsOptional() @IsString() @MaxLength(500) descripcion?: string; }
 class GrupoPatchDto { @IsOptional() @IsString() @MaxLength(100) nombre?: string; @IsOptional() @IsString() @MaxLength(500) descripcion?: string; @IsOptional() @IsBoolean() activo?: boolean; }
@@ -117,12 +118,12 @@ export class UsuariosController {
 
 @Controller('dashboard') @Roles('ADMIN', 'SUPERVISOR')
 export class DashboardController {
-  constructor(private readonly db: BaseDatos) {}
+  constructor(private readonly db: BaseDatos, @Inject('CONFIG') private readonly config: Configuracion) {}
   @Get() async obtener() {
     const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
     const [abiertas, pendientes, activos, inactivos, asignacionesHoy, solicitudesPendientes, solicitudesHoy] = await Promise.all([
       this.db.conversacion.count({ where: { estado: 'ABIERTA', canal: { tipo: 'ASESOR' } } }), this.db.conversacion.count({ where: { estado: 'PENDIENTE_ASIGNACION' } }),
-      this.db.asesor.count({ where: { activoReparto: true, disponible: true, usuario: { activo: true }, canales: { some: { activo: true, tipo: 'ASESOR', estadoIntegracion: 'ACTIVO' } } } }), this.db.asesor.count({ where: { OR: [{ activoReparto: false }, { disponible: false }] } }),
+      this.db.asesor.count({ where: { activoReparto: true, disponible: true, usuario: { activo: true }, canales: { some: filtroCanalOperativo(this.config.whatsappMode) } } }), this.db.asesor.count({ where: { OR: [{ activoReparto: false }, { disponible: false }] } }),
       this.db.asignacionSolicitud.count({ where: { fechaCreacion: { gte: hoy } } }),
       this.db.solicitudReparto.count({ where: { estado: 'NUEVA' } }),
       this.db.solicitudReparto.count({ where: { fechaRecepcion: { gte: hoy } } }),

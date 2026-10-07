@@ -10,10 +10,11 @@ import { ServicioOperacionV2 } from '../src/operacion-v2';
 import { Configuracion } from '../src/config';
 
 const db = new BaseDatos();
-const reparto = new ServicioReparto(db);
+const configMock = { whatsappMode: 'mock' } as Configuracion;
+const reparto = new ServicioReparto(db, configMock);
 const tiempoReal = new TiempoReal();
 const proveedor = new ProveedorWhatsAppMock();
-const operacionV2 = new ServicioOperacionV2(db, reparto, tiempoReal, proveedor);
+const operacionV2 = new ServicioOperacionV2(db, reparto, tiempoReal, proveedor, configMock);
 const entradas = new ServicioEntradas(db, reparto, tiempoReal, operacionV2, proveedor);
 const conversaciones = new ServicioConversaciones(db, reparto, tiempoReal, { whatsappMode: 'mock' } as Configuracion, proveedor);
 const sufijo = randomUUID().slice(0, 8);

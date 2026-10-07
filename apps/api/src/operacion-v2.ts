@@ -7,6 +7,8 @@ import { PROVEEDOR_WHATSAPP, ProveedorWhatsApp } from './proveedor-whatsapp';
 import { normalizarTelefono } from './telefonos';
 import { UsuarioSesion } from './auth';
 import { confirmarSalida } from './mensajes-envio';
+import { Configuracion } from './config';
+import { canalOperativo, filtroCanalOperativo, repartidorOperativo } from './canales-operativos';
 
 type Tx = Prisma.TransactionClient;
 
@@ -18,6 +20,7 @@ export interface MensajeCanal {
   nombre?: string;
   tipo: TipoMensaje;
   contenido: string;
+  opcionId?: string;
   fechaWhatsapp?: string;
 }
 export interface EcoCanal {
@@ -43,6 +46,7 @@ export class ServicioOperacionV2 {
     private readonly reparto: ServicioReparto,
     private readonly tiempoReal: TiempoReal,
     @Inject(PROVEEDOR_WHATSAPP) private readonly proveedor: ProveedorWhatsApp,
+    @Inject('CONFIG') private readonly config: Configuracion,
   ) {}
 
   private async contacto(tx: Tx, telefono: string, nombre?: string): Promise<Contacto> {
@@ -89,7 +93,7 @@ export class ServicioOperacionV2 {
       const evento = await tx.eventoWhatsapp.findUniqueOrThrow({ where: { identificadorExterno: idExterno } });
       if (evento.estado === 'PROCESADO') return {};
       const canal = await tx.canalWhatsapp.findUnique({ where: { phoneNumberId: entrada.phoneNumberId } });
-      if (!canal || !canal.activo || canal.estadoIntegracion !== 'ACTIVO') {
+      if (!canal || !(canal.tipo === 'REPARTIDOR' ? repartidorOperativo(canal, this.config.whatsappMode) : canalOperativo(canal, this.config.whatsappMode))) {
         await this.marcarProcesado(tx, idExterno);
         return {};
       }
@@ -99,13 +103,25 @@ export class ServicioOperacionV2 {
       if (duplicado) { await this.marcarProcesado(tx, idExterno); return {}; }
       const fecha = entrada.fechaWhatsapp ? new Date(entrada.fechaWhatsapp) : new Date();
       if (canal.tipo === 'REPARTIDOR') {
-        let conversacion = await tx.conversacion.findFirst({ where: { contactoId: contacto.id, canalId: canal.id, estado: { not: 'CERRADA' } } });
+        let solicitud = await tx.solicitudReparto.findFirst({ where: { contactoId: contacto.id, canalOrigenId: canal.id, estado: { notIn: ['CERRADA', 'CANCELADA'] } } });
+        let conversacion = await tx.conversacion.findFirst({ where: { contactoId: contacto.id, canalId: canal.id, estado: { not: 'CERRADA' }, solicitudRepartoId: solicitud?.id || null } });
+        if (!conversacion && solicitud) conversacion = await tx.conversacion.findFirst({ where: { contactoId: contacto.id, canalId: canal.id, estado: { not: 'CERRADA' }, solicitudRepartoId: null } });
+        if (!conversacion) {
+          const anterior = await tx.conversacion.findFirst({ where: { contactoId: contacto.id, canalId: canal.id, estado: { not: 'CERRADA' } } });
+          if (anterior) await tx.conversacion.update({ where: { id: anterior.id }, data: { estado: 'CERRADA', fechaCierre: new Date() } });
+        }
         if (!conversacion) conversacion = await tx.conversacion.create({ data: { contactoId: contacto.id, canalId: canal.id, estado: 'ABIERTA', fechaUltimoCliente: fecha } });
         await tx.mensaje.create({ data: { conversacionId: conversacion.id, idExternoWhatsapp: entrada.idExterno, direccion: 'ENTRANTE', origen: 'CLIENTE', tipo: entrada.tipo, contenido: entrada.contenido, fechaWhatsapp: fecha } });
         await tx.conversacion.update({ where: { id: conversacion.id }, data: { fechaUltimoMensaje: new Date(), fechaUltimoCliente: fecha } });
-        let solicitud = await tx.solicitudReparto.findFirst({ where: { contactoId: contacto.id, canalOrigenId: canal.id, estado: { notIn: ['CERRADA', 'CANCELADA'] } } });
-        if (solicitud) { await this.marcarProcesado(tx, idExterno); return { conversacionId: conversacion.id, solicitudId: solicitud.id }; }
-        solicitud = await tx.solicitudReparto.create({ data: { contactoId: contacto.id, canalOrigenId: canal.id, idExternoOrigen: entrada.idExterno, contenidoInicial: entrada.contenido, fechaRecepcion: fecha } });
+        if (solicitud) {
+          if (conversacion.solicitudRepartoId !== solicitud.id) await tx.conversacion.update({ where: { id: conversacion.id }, data: { solicitudRepartoId: solicitud.id } });
+          await this.marcarProcesado(tx, idExterno);
+          return { conversacionId: conversacion.id, solicitudId: solicitud.id };
+        }
+        const clave = (entrada.opcionId || entrada.contenido).trim();
+        const opcion = clave ? await tx.opcionWhatsapp.findFirst({ where: { activo: true, grupo: { activo: true }, OR: [{ identificadorExterno: clave }, { titulo: { equals: clave, mode: 'insensitive' } }] } }) : null;
+        solicitud = await tx.solicitudReparto.create({ data: { contactoId: contacto.id, canalOrigenId: canal.id, grupoId: opcion?.grupoId, idExternoOrigen: entrada.idExterno, contenidoInicial: entrada.contenido, fechaRecepcion: fecha } });
+        await tx.conversacion.update({ where: { id: conversacion.id }, data: { solicitudRepartoId: solicitud.id } });
         const asesorId = await this.reparto.asignarSolicitudEnTransaccion(tx, solicitud.id);
         const configuracion = await tx.configuracionWhatsapp.findUnique({ where: { id: 1 } });
         const texto = configuracion?.mensajeEspera || 'En un momento lo atendemos.';
@@ -122,7 +138,7 @@ export class ServicioOperacionV2 {
       await this.marcarProcesado(tx, idExterno);
       const asesor = await tx.asesor.findUnique({ where: { id: canal.asesorId } });
       return { conversacionId: conversacion.id, solicitudId: solicitud?.id, asesorUsuarioId: asesor?.usuarioId };
-    }, { timeout: 20000 });
+    }, { maxWait: 60000, timeout: 60000 });
     if (resultado.salida) {
       const salida = resultado.salida;
       try {
@@ -142,7 +158,7 @@ export class ServicioOperacionV2 {
       const evento = await tx.eventoWhatsapp.findUniqueOrThrow({ where: { identificadorExterno: idExterno } });
       if (evento.estado === 'PROCESADO') return {};
       const canal = await tx.canalWhatsapp.findUnique({ where: { phoneNumberId: eco.phoneNumberId } });
-      if (!canal || canal.tipo !== 'ASESOR' || !canal.asesorId) { await this.marcarProcesado(tx, idExterno); return {}; }
+      if (!canalOperativo(canal, this.config.whatsappMode) || !canal.modoCoexistencia) { await this.marcarProcesado(tx, idExterno); return {}; }
       const contacto = await this.contacto(tx, eco.destinatario);
       await this.bloquearContacto(tx, contacto.id);
       if (await tx.mensaje.findUnique({ where: { idExternoWhatsapp: eco.idExterno } })) { await this.marcarProcesado(tx, idExterno); return {}; }
@@ -166,8 +182,10 @@ export class ServicioOperacionV2 {
       if (usuario.rol === 'ASESOR' && solicitud.asesor?.usuarioId !== usuario.id) throw new ForbiddenException('Solicitud ajena');
       if (!['ASESOR', 'ADMIN', 'SUPERVISOR'].includes(usuario.rol)) throw new ForbiddenException();
       if (solicitud.estado !== 'ASIGNADA') throw new ConflictException('La atención ya se inició o la solicitud no está asignada');
-      const canal = solicitud.canalAsesor;
-      if (!canal?.activo || canal.estadoIntegracion !== 'ACTIVO' || !canal.phoneNumberId || canal.asesorId !== solicitud.asesorId) throw new ConflictException('Canal del asesor no operativo');
+      const canal = solicitud.asesorId ? await tx.canalWhatsapp.findFirst({ where: { ...filtroCanalOperativo(this.config.whatsappMode), asesorId: solicitud.asesorId } }) : null;
+      if (!canalOperativo(canal, this.config.whatsappMode) || canal.asesorId !== solicitud.asesorId)
+        throw new ConflictException(`El asesor ${solicitud.asesor?.usuario.nombre || 'asignado'} no tiene un canal WhatsApp ${this.config.whatsappMode === 'meta' ? 'Meta' : 'demo'} activo.`);
+      if (solicitud.canalAsesorId !== canal.id) await tx.solicitudReparto.update({ where: { id: solicitud.id }, data: { canalAsesorId: canal.id } });
       const configuracion = await tx.configuracionWhatsapp.findUnique({ where: { id: 1 } });
       if (!configuracion?.nombrePlantillaInicio) throw new ConflictException('Configura una plantilla de inicio aprobada antes de atender');
       let conversacion = solicitud.conversaciones.find(item => item.canalId === canal.id) || null;

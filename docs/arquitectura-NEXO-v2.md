@@ -34,6 +34,10 @@ Una migración versionada añade `canales_whatsapp`, `solicitudes_reparto`, `asi
 
 `mensajes.origen` distingue `NEXO`, `WHATSAPP_BUSINESS_APP`, `CLIENTE` y `SISTEMA`; se rellena para filas V1 según dirección/tipo. Los contactos se normalizan al registrar nuevos eventos. Los contactos históricos no se fusionan automáticamente porque podría haber colisiones o diferencias de identidad; la migración no altera su historial.
 
+La migración `202610070001_proveedor_canal` añade el proveedor `MOCK | META` a cada canal. Clasifica los canales demo reconocibles durante la migración; los demás, incluido un repartidor Meta ya registrado, quedan `META` sin cambiar su estado ni sus IDs. Los índices permiten un canal activo por asesor y proveedor, y un repartidor activo por proveedor. El modo de ejecución filtra el proveedor en reparto, entradas, inicio y envío; un canal mock nunca puede suministrar el Phone Number ID a Graph API en modo Meta. Si no hay asesor Meta elegible, la solicitud permanece `NUEVA` sin incrementar contadores. Coexistence es opcional para un canal Meta de asesor.
+
+`solicitudes_reparto.grupo_id` permite usar una opción/grupo existente cuando el cliente envía su identificador o título exacto. Las consultas libres conservan el reparto general sin mostrar el menú legado V1. `canal_origen_id`, `canal_asesor_id` y los hilos enlazados representan ambos números dentro del mismo proceso comercial. La bandeja identifica el proceso y permite pasar del hilo del repartidor al hilo del asesor; el asesor puede consultar la entrada original, pero solo responde desde su canal propio.
+
 ## Límites operativos
 
 - El primer contacto y cualquier envío fuera de la ventana del canal asesor requieren una plantilla configurada y aprobada. NEXO bloquea texto libre si no existe un mensaje entrante del cliente en las últimas 24 horas para ese canal.

@@ -10,8 +10,9 @@ import { TiempoReal } from '../src/tiempo-real';
 import { Configuracion } from '../src/config';
 import { SolicitudesRepartoController } from '../src/operacion-v2.controller';
 
-const db = new BaseDatos(); const reparto = new ServicioReparto(db); const real = new TiempoReal(); const proveedor = new ProveedorWhatsAppMock();
-const operacion = new ServicioOperacionV2(db, reparto, real, proveedor);
+const configMock = { whatsappMode: 'mock' } as Configuracion;
+const db = new BaseDatos(); const reparto = new ServicioReparto(db, configMock); const real = new TiempoReal(); const proveedor = new ProveedorWhatsAppMock();
+const operacion = new ServicioOperacionV2(db, reparto, real, proveedor, configMock);
 const entradas = new ServicioEntradas(db, reparto, real, operacion, proveedor);
 const conversaciones = new ServicioConversaciones(db, reparto, real, { whatsappMode: 'mock' } as Configuracion, proveedor);
 const sufijo = randomUUID().replace(/-/g, '').slice(0, 12);
@@ -32,7 +33,7 @@ async function entrada(numero: string, indice: number) {
 beforeAll(async () => {
   await db.$connect();
   const grupo = await db.grupo.create({ data: { nombre: `V2 ${sufijo}` } }); grupoId = grupo.id;
-  const repartidor = await db.canalWhatsapp.create({ data: { tipo: 'REPARTIDOR', nombre: 'Repartidor test', numeroVisible: `TEST-R-${sufijo}`, phoneNumberId: `test-repartidor-${sufijo}`, activo: false, estadoIntegracion: 'ACTIVO' } });
+  const repartidor = await db.canalWhatsapp.create({ data: { tipo: 'REPARTIDOR', proveedor: 'MOCK', nombre: 'Repartidor test', numeroVisible: `TEST-R-${sufijo}`, phoneNumberId: `test-repartidor-${sufijo}`, activo: false, estadoIntegracion: 'ACTIVO' } });
   repartidorId = repartidor.id; repartidorPhoneId = repartidor.phoneNumberId!; canales.push(repartidor.id);
   // El seed de desarrollo ya tiene un repartidor activo. Este fixture se activa solo tras desactivarlo temporalmente.
   const activo = await db.canalWhatsapp.findFirst({ where: { tipo: 'REPARTIDOR', activo: true } });
@@ -41,7 +42,7 @@ beforeAll(async () => {
   for (let i = 0; i < 4; i++) {
     const usuario = await db.usuario.create({ data: { nombre: `V2-${i}`, apellido: sufijo, correo: `v2-${sufijo}-${i}@local.test`, passwordHash: 'test', rol: 'ASESOR' } }); usuarios.push(usuario.id);
     const asesor = await db.asesor.create({ data: { usuarioId: usuario.id, grupoId, contadorReparto: -100 } }); asesores.push(asesor.id);
-    const canal = await db.canalWhatsapp.create({ data: { tipo: 'ASESOR', nombre: `Test ${i}`, numeroVisible: `TEST-A-${sufijo}-${i}`, phoneNumberId: `test-asesor-${sufijo}-${i}`, asesorId: asesor.id, activo: true, estadoIntegracion: 'ACTIVO', modoCoexistencia: true } }); canales.push(canal.id);
+    const canal = await db.canalWhatsapp.create({ data: { tipo: 'ASESOR', proveedor: 'MOCK', nombre: `Test ${i}`, numeroVisible: `TEST-A-${sufijo}-${i}`, phoneNumberId: `test-asesor-${sufijo}-${i}`, asesorId: asesor.id, activo: true, estadoIntegracion: 'ACTIVO', modoCoexistencia: true } }); canales.push(canal.id);
   }
 });
 afterAll(async () => {
@@ -87,15 +88,12 @@ describe('NEXO V2 multicanal', () => {
     expect(plantilla.tipo).toBe('PLANTILLA'); expect(plantilla.origen).toBe('NEXO');
     await expect(conversaciones.obtener(inicio.conversacionId, ajeno)).rejects.toMatchObject({ status: 403 });
     expect((await conversaciones.obtener(inicio.conversacionId, { ...propio, rol: 'ADMIN' })).id).toBe(inicio.conversacionId);
-    const conversacionMeta = new ServicioConversaciones(db, reparto, real, { whatsappMode: 'meta' } as Configuracion, proveedor);
-    await expect(conversacionMeta.responder(inicio.conversacionId, 'Texto antes de respuesta', propio)).rejects.toThrow('Ventana de atención cerrada');
-    expect((await conversacionMeta.enviarPlantilla(inicio.conversacionId, propio)).tipo).toBe('PLANTILLA');
     const respuestaId = `v2:${sufijo}:respuesta`; eventos.push(respuestaId);
     await entradas.registrar(respuestaId, 'mensaje_canal', { idExterno: respuestaId, phoneNumberId: solicitud.canalAsesor!.phoneNumberId, waId: solicitud.contacto.waId, telefono: solicitud.contacto.waId, tipo: 'TEXTO', contenido: 'Gracias por contactarme' });
     await entradas.procesar(respuestaId);
     await entradas.procesar(respuestaId);
     expect(await db.mensaje.count({ where: { idExternoWhatsapp: respuestaId } })).toBe(1);
-    expect((await conversacionMeta.responder(inicio.conversacionId, 'Texto tras respuesta', propio)).origen).toBe('NEXO');
+    expect((await conversaciones.responder(inicio.conversacionId, 'Texto tras respuesta', propio)).origen).toBe('NEXO');
     const ecoId = `v2:${sufijo}:eco`; eventos.push(ecoId);
     await entradas.registrar(ecoId, 'eco_canal', { idExterno: ecoId, phoneNumberId: solicitud.canalAsesor!.phoneNumberId, destinatario: solicitud.contacto.waId, tipo: 'TEXTO', contenido: 'Respuesta desde celular' });
     await entradas.procesar(ecoId); await entradas.procesar(ecoId);
@@ -152,7 +150,7 @@ describe('NEXO V2 multicanal', () => {
     await db.canalWhatsapp.updateMany({ where: { asesorId: destinoId }, data: { activo: true, estadoIntegracion: 'ACTIVO' } });
     const anterior = await db.conversacion.findFirstOrThrow({ where: { solicitudRepartoId: actual.id } });
     const mensajesAntes = await db.mensaje.count({ where: { conversacionId: anterior.id } });
-    const controller = new SolicitudesRepartoController(db, operacion, reparto, real);
+    const controller = new SolicitudesRepartoController(db, operacion, reparto, real, configMock);
     const admin = { id: usuarios[0], nombre: 'Admin', apellido: '', correo: '', rol: 'ADMIN' as const };
     const reasignada = await controller.reasignar(actual.id, { asesorId: destinoId, motivo: 'Continuidad de atención' }, admin);
     expect(reasignada.asesorId).toBe(destinoId);

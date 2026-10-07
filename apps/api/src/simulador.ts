@@ -37,21 +37,21 @@ export class SimuladorController {
   @Post('v2/repartidor')
   async repartidor(@Body() dto: SimulacionCanalDto) {
     this.comprobar();
-    const canal = await this.db.canalWhatsapp.findFirst({ where: { tipo: 'REPARTIDOR', activo: true, estadoIntegracion: 'ACTIVO' } });
+    const canal = await this.db.canalWhatsapp.findFirst({ where: { tipo: 'REPARTIDOR', proveedor: 'MOCK', activo: true, estadoIntegracion: 'ACTIVO' } });
     if (!canal?.phoneNumberId) throw new BadRequestException('Configura un canal repartidor activo');
     return this.simularCanal(canal.phoneNumberId, dto, 'mensaje_canal');
   }
   @Post('v2/asesor/:canalId/entrada')
   async entradaAsesor(@Param('canalId') canalId: string, @Body() dto: SimulacionCanalDto) {
     this.comprobar();
-    const canal = await this.db.canalWhatsapp.findFirst({ where: { id: Number(canalId), tipo: 'ASESOR', activo: true, estadoIntegracion: 'ACTIVO' } });
+    const canal = await this.db.canalWhatsapp.findFirst({ where: { id: Number(canalId), tipo: 'ASESOR', proveedor: 'MOCK', activo: true, estadoIntegracion: 'ACTIVO' } });
     if (!canal?.phoneNumberId) throw new BadRequestException('Canal asesor no operativo');
     return this.simularCanal(canal.phoneNumberId, dto, 'mensaje_canal');
   }
   @Post('v2/asesor/:canalId/eco')
   async ecoAsesor(@Param('canalId') canalId: string, @Body() dto: SimulacionCanalDto) {
     this.comprobar();
-    const canal = await this.db.canalWhatsapp.findFirst({ where: { id: Number(canalId), tipo: 'ASESOR', activo: true, estadoIntegracion: 'ACTIVO' } });
+    const canal = await this.db.canalWhatsapp.findFirst({ where: { id: Number(canalId), tipo: 'ASESOR', proveedor: 'MOCK', activo: true, estadoIntegracion: 'ACTIVO' } });
     if (!canal?.phoneNumberId) throw new BadRequestException('Canal asesor no operativo');
     return this.simularCanal(canal.phoneNumberId, dto, 'eco_canal');
   }

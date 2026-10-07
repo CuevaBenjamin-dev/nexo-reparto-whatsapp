@@ -26,6 +26,11 @@ enum TipoCanalWhatsapp {
   ASESOR
 }
 
+enum ProveedorCanalWhatsapp {
+  MOCK
+  META
+}
+
 enum EstadoIntegracion {
   PENDIENTE_CONFIGURACION
   ACTIVO
@@ -129,6 +134,7 @@ model Grupo {
   opciones           OpcionWhatsapp[]
   conversaciones     Conversacion[]
   asignaciones       Asignacion[]
+  solicitudes        SolicitudReparto[]
 
   @@map("grupos")
 }
@@ -282,6 +288,7 @@ model Auditoria {
 model CanalWhatsapp {
   id                 Int                @id @default(autoincrement())
   tipo               TipoCanalWhatsapp
+  proveedor          ProveedorCanalWhatsapp @default(META)
   nombre             String
   numeroVisible      String?            @unique @map("numero_visible")
   phoneNumberId      String?            @unique @map("phone_number_id")
@@ -306,6 +313,7 @@ model CanalWhatsapp {
 model SolicitudReparto {
   id                  Int                    @id @default(autoincrement())
   contactoId          Int                    @map("contacto_id")
+  grupoId             Int?                   @map("grupo_id")
   canalOrigenId       Int                    @map("canal_origen_id")
   asesorId            Int?                   @map("asesor_id")
   canalAsesorId       Int?                   @map("canal_asesor_id")
@@ -319,6 +327,7 @@ model SolicitudReparto {
   fechaCreacion       DateTime               @default(now()) @map("fecha_creacion")
   fechaActualizacion  DateTime               @updatedAt @map("fecha_actualizacion")
   contacto            Contacto               @relation(fields: [contactoId], references: [id])
+  grupo               Grupo?                 @relation(fields: [grupoId], references: [id])
   canalOrigen         CanalWhatsapp          @relation("CanalOrigen", fields: [canalOrigenId], references: [id])
   asesor              Asesor?                @relation(fields: [asesorId], references: [id])
   canalAsesor         CanalWhatsapp?         @relation("CanalAsesor", fields: [canalAsesorId], references: [id])
@@ -328,6 +337,7 @@ model SolicitudReparto {
   @@index([asesorId, estado, fechaRecepcion])
   @@index([contactoId, estado])
   @@index([canalOrigenId, estado])
+  @@index([grupoId, estado])
   @@map("solicitudes_reparto")
 }
 

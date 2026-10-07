@@ -70,21 +70,22 @@ export class WebhookController {
     else for (const entrada of cuerpo.entry) for (const cambio of entrada.changes || []) {
       const valor = cambio.value;
       const phoneNumberId = valor?.metadata?.phone_number_id;
-      const canal = phoneNumberId ? await this.db.canalWhatsapp.findUnique({ where: { phoneNumberId } }) : null;
+      const registrado = phoneNumberId ? await this.db.canalWhatsapp.findUnique({ where: { phoneNumberId } }) : null;
+      const canal = registrado?.proveedor === 'META' ? registrado : null;
       let reconocido = false;
       if (cambio.field === 'messages' || cambio.field === 'smb_message_echoes') {
         for (const mensaje of cambio.field === 'messages' ? valor?.messages || [] : []) {
           if (!mensaje.id || !mensaje.from || !phoneNumberId) { await guardarDesconocido({ field: cambio.field, metadata: valor?.metadata, mensaje }); continue; }
           reconocido = true;
           if (canal) {
-            const payload: MensajeCanal = { idExterno: mensaje.id, phoneNumberId, waId: mensaje.from, telefono: mensaje.from, nombre: valor?.contacts?.find(c => c.wa_id === mensaje.from)?.profile?.name, tipo: tipoMensaje(mensaje.type), contenido: contenidoMensaje(mensaje), fechaWhatsapp: fechaMeta(mensaje.timestamp) };
+            const payload: MensajeCanal = { idExterno: mensaje.id, phoneNumberId, waId: mensaje.from, telefono: mensaje.from, nombre: valor?.contacts?.find(c => c.wa_id === mensaje.from)?.profile?.name, tipo: tipoMensaje(mensaje.type), contenido: contenidoMensaje(mensaje), opcionId: mensaje.interactive?.list_reply?.id || mensaje.interactive?.button_reply?.id, fechaWhatsapp: fechaMeta(mensaje.timestamp) };
             await this.entradas.registrar(mensaje.id, 'mensaje_canal', payload as unknown as object);
-          } else if (this.config.metaPhoneNumberId === phoneNumberId) {
+          } else if (!registrado && this.config.metaPhoneNumberId === phoneNumberId) {
             const opcionId = mensaje.interactive?.list_reply?.id || mensaje.interactive?.button_reply?.id;
             const payload: EntradaCliente = { idExterno: mensaje.id, waId: mensaje.from, telefono: mensaje.from, nombre: valor?.contacts?.find(c => c.wa_id === mensaje.from)?.profile?.name, tipo: mensaje.type === 'interactive' ? 'INTERACTIVO' : 'TEXTO', contenido: contenidoMensaje(mensaje), opcionId, fechaWhatsapp: fechaMeta(mensaje.timestamp) };
             await this.entradas.registrar(mensaje.id, 'mensaje', payload as unknown as object);
           } else await guardarDesconocido({ field: cambio.field, metadata: valor?.metadata, mensaje });
-          if (canal || this.config.metaPhoneNumberId === phoneNumberId) ids.push(mensaje.id);
+          if (canal || (!registrado && this.config.metaPhoneNumberId === phoneNumberId)) ids.push(mensaje.id);
         }
         for (const eco of cambio.field === 'smb_message_echoes' ? (valor?.message_echoes || valor?.messages || []) : (valor?.message_echoes || [])) {
           if (!eco.id || !eco.to || !phoneNumberId || !canal) { await guardarDesconocido({ field: cambio.field, metadata: valor?.metadata, eco }); continue; }

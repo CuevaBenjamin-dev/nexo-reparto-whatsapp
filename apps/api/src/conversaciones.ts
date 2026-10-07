@@ -9,6 +9,7 @@ import { Inject } from '@nestjs/common';
 import { Configuracion } from './config';
 import { normalizarTelefono } from './telefonos';
 import { confirmarSalida } from './mensajes-envio';
+import { canalOperativo } from './canales-operativos';
 
 @Injectable()
 export class ServicioConversaciones {
@@ -18,6 +19,7 @@ export class ServicioConversaciones {
     if (usuario.rol === 'ASESOR') return { OR: [
       { canalId: null, asesor: { usuarioId: usuario.id } },
       { canal: { tipo: 'ASESOR', asesor: { usuarioId: usuario.id } } },
+      { canal: { tipo: 'REPARTIDOR' }, solicitudReparto: { asesor: { usuarioId: usuario.id } } },
     ] };
     if (usuario.rol === 'ADMIN' || usuario.rol === 'SUPERVISOR') return {};
     throw new ForbiddenException('Sin permisos para conversaciones');
@@ -47,7 +49,7 @@ export class ServicioConversaciones {
       const actual = await tx.conversacion.findFirst({ where: { id, estado: 'ABIERTA', AND: this.filtro(usuario) }, include: { contacto: true, canal: true } });
       if (!actual) throw new NotFoundException('Conversación abierta no disponible');
       if (actual.canalId) {
-        if (actual.canal?.tipo !== 'ASESOR' || !actual.canal.activo || actual.canal.estadoIntegracion !== 'ACTIVO' || !actual.canal.phoneNumberId) throw new ConflictException('Canal del asesor no operativo');
+        if (!canalOperativo(actual.canal, this.config.whatsappMode) || actual.canal.asesorId !== actual.asesorId) throw new ConflictException('El asesor no tiene un canal WhatsApp operativo para este modo');
         if (this.config.whatsappMode === 'meta' && (!actual.fechaUltimoCliente || Date.now() - actual.fechaUltimoCliente.getTime() >= 24 * 60 * 60 * 1000)) throw new ConflictException('Ventana de atención cerrada: inicia con una plantilla aprobada');
       }
       const mensaje = await tx.mensaje.create({ data: { conversacionId: id, direccion: 'SALIENTE', origen: 'NEXO', tipo: 'TEXTO', contenido: contenido.trim(), estadoEnvio: 'PENDIENTE' } });
@@ -72,7 +74,7 @@ export class ServicioConversaciones {
     const preparado = await this.db.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM conversaciones WHERE id = ${id} FOR UPDATE`;
       const hilo = await tx.conversacion.findFirst({ where: { id, estado: 'ABIERTA', AND: this.filtro(usuario), canal: { tipo: 'ASESOR', activo: true, estadoIntegracion: 'ACTIVO' } }, include: { canal: true, contacto: true, asesor: { include: { usuario: true } } } });
-      if (!hilo?.canal?.phoneNumberId || !hilo.asesor) throw new NotFoundException('Conversación de asesor no disponible');
+      if (!hilo?.asesor || !canalOperativo(hilo.canal, this.config.whatsappMode) || hilo.canal.asesorId !== hilo.asesorId) throw new ConflictException('El asesor no tiene un canal WhatsApp operativo para este modo');
       const config = await tx.configuracionWhatsapp.findUnique({ where: { id: 1 } });
       if (!config?.nombrePlantillaInicio) throw new ConflictException('Configura una plantilla aprobada antes de enviar');
       const parametros = [hilo.contacto.nombre || 'cliente', `${hilo.asesor.usuario.nombre} ${hilo.asesor.usuario.apellido}`.trim()];
@@ -93,12 +95,13 @@ export class ServicioConversaciones {
   async cerrar(id: number, usuario: UsuarioSesion) {
     const { cerrada, asesorUsuarioId } = await this.db.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM conversaciones WHERE id = ${id} FOR UPDATE`;
-      const actual = await tx.conversacion.findUnique({ where: { id }, include: { asesor: true } });
+      const actual = await tx.conversacion.findUnique({ where: { id }, include: { asesor: true, canal: true } });
       if (!actual) throw new NotFoundException('Conversación inexistente');
+      if (usuario.rol === 'ASESOR' && actual.canal?.tipo === 'REPARTIDOR') throw new ForbiddenException('El repartidor solo recibe consultas');
       if (usuario.rol === 'ASESOR' && (actual.estado !== 'ABIERTA' || !await tx.conversacion.findFirst({ where: { id, AND: this.filtro(usuario) } }))) throw new ForbiddenException('No puedes cerrar esta conversación');
       if (actual.estado === 'CERRADA') return { cerrada: actual, asesorUsuarioId: actual.asesor?.usuarioId };
       const cerrada = await tx.conversacion.update({ where: { id }, data: { estado: 'CERRADA', fechaCierre: new Date() } });
-      if (actual.solicitudRepartoId) await tx.solicitudReparto.updateMany({ where: { id: actual.solicitudRepartoId, estado: { notIn: ['CERRADA', 'CANCELADA'] } }, data: { estado: 'CERRADA', fechaCierre: new Date() } });
+      if (actual.solicitudRepartoId && actual.canal?.tipo === 'ASESOR') await tx.solicitudReparto.updateMany({ where: { id: actual.solicitudRepartoId, estado: { notIn: ['CERRADA', 'CANCELADA'] } }, data: { estado: 'CERRADA', fechaCierre: new Date() } });
       await tx.auditoria.create({ data: { usuarioId: usuario.id, accion: 'CERRAR', entidad: 'conversaciones', entidadId: String(id) } });
       return { cerrada, asesorUsuarioId: actual.asesor?.usuarioId };
     });

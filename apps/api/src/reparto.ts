@@ -1,12 +1,14 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { BaseDatos } from './base-datos';
 import { Prisma, EstadoConversacion, TipoAsignacion } from '@prisma/client';
+import { Configuracion } from './config';
+import { proveedorDelModo } from './canales-operativos';
 
 type Transaccion = Prisma.TransactionClient;
 
 @Injectable()
 export class ServicioReparto {
-  constructor(private readonly db: BaseDatos) {}
+  constructor(private readonly db: BaseDatos, @Inject('CONFIG') private readonly config: Configuracion) {}
 
   async bloquearGrupo(tx: Transaccion, grupoId: number): Promise<void> {
     // V1 y V2 comparten contador_reparto: serializar ambos motores evita elegir mínimos obsoletos.
@@ -55,22 +57,30 @@ export class ServicioReparto {
   async asignarSolicitudEnTransaccion(tx: Transaccion, solicitudId: number): Promise<number | null> {
     // Un solo conjunto de asesores V2; el bloqueo no afecta los grupos legados V1.
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(42020, 1)::text`;
-    const filas = await tx.$queryRaw<Array<{ id: number; asesor_id: number | null; estado: string }>>`
-      SELECT id, asesor_id, estado FROM solicitudes_reparto WHERE id = ${solicitudId} FOR UPDATE`;
+    const filas = await tx.$queryRaw<Array<{ id: number; asesor_id: number | null; estado: string; grupo_id: number | null }>>`
+      SELECT id, asesor_id, estado, grupo_id FROM solicitudes_reparto WHERE id = ${solicitudId} FOR UPDATE`;
     const solicitud = filas[0];
     if (!solicitud) throw new NotFoundException('Solicitud inexistente');
     if (solicitud.asesor_id) return solicitud.asesor_id;
     if (solicitud.estado !== 'NUEVA') throw new ConflictException('Solicitud no disponible para reparto');
+    const proveedor = proveedorDelModo(this.config.whatsappMode);
+    const requiereWaba = this.config.whatsappMode === 'meta';
     const elegibles = await tx.$queryRaw<Array<{ id: number; canal_id: number }>>`
       SELECT a.id, c.id AS canal_id FROM asesores a
       JOIN usuarios u ON u.id = a.usuario_id
-      JOIN canales_whatsapp c ON c.asesor_id = a.id AND c.tipo = 'ASESOR' AND c.activo = true AND c.estado_integracion = 'ACTIVO'
+      JOIN canales_whatsapp c ON c.asesor_id = a.id AND c.tipo = 'ASESOR' AND c.proveedor = CAST(${proveedor} AS "ProveedorCanalWhatsapp")
+        AND c.activo = true AND c.estado_integracion = 'ACTIVO' AND NULLIF(BTRIM(c.numero_visible), '') IS NOT NULL
+        AND NULLIF(BTRIM(c.phone_number_id), '') IS NOT NULL AND (${requiereWaba} = false OR (c.phone_number_id ~ '^[0-9]+$' AND c.waba_id ~ '^[0-9]+$'))
       WHERE a.activo_reparto = true AND a.disponible = true AND u.activo = true AND u.rol = 'ASESOR'
+        AND (${solicitud.grupo_id}::integer IS NULL OR a.grupo_id = ${solicitud.grupo_id}::integer)
         AND a.contador_reparto = (
           SELECT MIN(a2.contador_reparto) FROM asesores a2
           JOIN usuarios u2 ON u2.id = a2.usuario_id
-          JOIN canales_whatsapp c2 ON c2.asesor_id = a2.id AND c2.tipo = 'ASESOR' AND c2.activo = true AND c2.estado_integracion = 'ACTIVO'
+          JOIN canales_whatsapp c2 ON c2.asesor_id = a2.id AND c2.tipo = 'ASESOR' AND c2.proveedor = CAST(${proveedor} AS "ProveedorCanalWhatsapp")
+            AND c2.activo = true AND c2.estado_integracion = 'ACTIVO' AND NULLIF(BTRIM(c2.numero_visible), '') IS NOT NULL
+            AND NULLIF(BTRIM(c2.phone_number_id), '') IS NOT NULL AND (${requiereWaba} = false OR (c2.phone_number_id ~ '^[0-9]+$' AND c2.waba_id ~ '^[0-9]+$'))
           WHERE a2.activo_reparto = true AND a2.disponible = true AND u2.activo = true AND u2.rol = 'ASESOR'
+            AND (${solicitud.grupo_id}::integer IS NULL OR a2.grupo_id = ${solicitud.grupo_id}::integer)
         )
       ORDER BY random() LIMIT 1 FOR UPDATE OF a`;
     const elegido = elegibles[0];

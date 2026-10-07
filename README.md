@@ -12,6 +12,8 @@ NEXO recibe consultas en un número **repartidor**, crea una solicitud independi
 
 La migración `202610060002_nexo_v2` añade tablas, enums y columnas; mantiene usuarios, asesores, conversaciones, mensajes y auditoría V1. Las conversaciones legadas tienen `canal_id NULL`. Respaldar y probar la restauración antes de aplicarla a una base productiva. No usar `prisma db push` ni `docker compose down -v` sobre datos que se deseen conservar.
 
+La migración `202610070001_proveedor_canal` clasifica los canales existentes como `MOCK` o `META` sin cambiar sus números, estado ni historial. Los IDs demo conocidos quedan en `MOCK`; los demás quedan en `META`. También permite conservar un repartidor y un canal por asesor para cada proveedor. No crea esquemas PostgreSQL ni reinicia la base.
+
 ## Inicio local
 
 Requisitos: Docker Engine y Docker Compose v2. Sin Docker: Node 22+, npm, PostgreSQL 16 y Redis 7.
@@ -27,9 +29,13 @@ Si ya existe una V1 local con Meta real, no ejecutar el comando anterior sobre s
 
 ## Variables
 
-Ver [.env.example](.env.example). En modo `mock`, el seed crea un repartidor y cuatro canales asesores sintéticos para Andrea, Carlos, Lucía y Miguel; la arquitectura no limita la cantidad de asesores. El quinto asesor legado permanece sin canal V2. Los nombres, IDs y números reales se registran desde **Canales WhatsApp**.
+Ver [.env.example](.env.example). En modo `mock`, el seed crea un repartidor y cuatro canales asesores sintéticos para Andrea, Carlos, Lucía y Miguel; la arquitectura no limita la cantidad de asesores. El quinto asesor legado permanece sin canal V2. En modo `meta`, el seed no crea ni reactiva canales demo; si no se proporcionó `ADMIN_INICIAL_PASSWORD`, sale sin cambios. Los nombres, IDs y números reales se registran desde **Canales WhatsApp**.
 
 En modo `meta`, configurar como secretos del backend `META_WHATSAPP_ACCESS_TOKEN`, `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN` y `META_GRAPH_API_VERSION`. La configuración V1 opcional `META_WHATSAPP_PHONE_NUMBER_ID` solo se usa como fallback para el flujo legado. Configurar también `DATABASE_URL`, `REDIS_URL`, `AUTH_SECRET`, `COOKIE_SECRET`, `WEB_URL`, `API_URL` y `WHATSAPP_MODE`. En producción usar HTTPS, secretos aleatorios robustos y `NODE_ENV=production`; el seed de demostración está bloqueado.
+
+Un canal `MOCK` nunca participa en el flujo V2 cuando `WHATSAPP_MODE=meta`. Para que un asesor sea elegible en Meta necesita un canal `META` activo con integración `ACTIVO`, número visible, Phone Number ID y WABA ID. Coexistence es opcional: permite ecos de WhatsApp Business App, pero el asesor puede atender desde NEXO con Cloud API sin él. Si no hay asesores elegibles, la solicitud queda `NUEVA`, el repartidor envía la respuesta de espera y ningún contador aumenta. Una asignación anterior que apuntaba a un canal demo puede iniciar atención desde el canal Meta válido del mismo asesor; si no existe, NEXO responde 409 antes de llamar a Graph API.
+
+Las opciones/grupos existentes pueden clasificar una consulta si el cliente envía un identificador o título coincidente; las consultas libres siguen en el conjunto general. V2 no envía el menú V1 al repartidor. La solicitud conserva canal de entrada y canal de atención, y sus conversaciones enlazadas muestran el proceso comercial completo.
 
 El token global debe tener acceso a todos los números gestionados. Phone Number ID, WABA ID y número visible de cada canal se almacenan en PostgreSQL; los secretos no. La plantilla de primer contacto se configura en NEXO con nombre e idioma. Debe estar aprobada en Meta y usar dos parámetros: nombre del cliente y del asesor.
 
