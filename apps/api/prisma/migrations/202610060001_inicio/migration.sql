@@ -1,6 +1,3 @@
--- CreateSchema
-CREATE SCHEMA IF NOT EXISTS "public";
-
 -- CreateEnum
 CREATE TYPE "Rol" AS ENUM ('ADMIN', 'SUPERVISOR', 'RRHH', 'ASESOR');
 
