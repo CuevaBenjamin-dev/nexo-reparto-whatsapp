@@ -13,25 +13,58 @@ enum Rol {
   RRHH
   ASESOR
 }
+
 enum EstadoConversacion {
   ESPERANDO_OPCION
   PENDIENTE_ASIGNACION
   ABIERTA
   CERRADA
 }
+
+enum TipoCanalWhatsapp {
+  REPARTIDOR
+  ASESOR
+}
+
+enum EstadoIntegracion {
+  PENDIENTE_CONFIGURACION
+  ACTIVO
+  INACTIVO
+  ERROR
+}
+
+enum EstadoSolicitudReparto {
+  NUEVA
+  ASIGNADA
+  CONTACTO_INICIADO
+  EN_ATENCION
+  CERRADA
+  CANCELADA
+}
+
+enum OrigenMensaje {
+  NEXO
+  WHATSAPP_BUSINESS_APP
+  CLIENTE
+  SISTEMA
+}
+
 enum DireccionMensaje {
   ENTRANTE
   SALIENTE
 }
+
 enum TipoMensaje {
   TEXTO
   INTERACTIVO
+  PLANTILLA
   IMAGEN
   DOCUMENTO
   AUDIO
   VIDEO
   UBICACION
 }
+
 enum EstadoEnvio {
   PENDIENTE
   ENVIADO
@@ -39,11 +72,13 @@ enum EstadoEnvio {
   LEIDO
   FALLIDO
 }
+
 enum TipoAsignacion {
   AUTOMATICA
   MANUAL
   REASIGNACION
 }
+
 enum EstadoEvento {
   PENDIENTE
   PROCESANDO
@@ -52,30 +87,33 @@ enum EstadoEvento {
 }
 
 model Usuario {
-  id                    Int       @id @default(autoincrement())
-  nombre                String
-  apellido              String
-  correo                String    @unique
-  passwordHash          String    @map("password_hash")
-  rol                   Rol
-  activo                Boolean   @default(true)
-  debeCambiarContrasena Boolean   @default(false) @map("debe_cambiar_contrasena")
-  fechaCreacion         DateTime  @default(now()) @map("fecha_creacion")
-  fechaActualizacion    DateTime  @updatedAt @map("fecha_actualizacion")
-  asesor                Asesor?
-  sesiones              Sesion[]
-  asignaciones          Asignacion[]
-  auditorias            Auditoria[]
+  id                      Int                   @id @default(autoincrement())
+  nombre                  String
+  apellido                String
+  correo                  String                @unique
+  passwordHash            String                @map("password_hash")
+  rol                     Rol
+  activo                  Boolean               @default(true)
+  debeCambiarContrasena   Boolean               @default(false) @map("debe_cambiar_contrasena")
+  fechaCreacion           DateTime              @default(now()) @map("fecha_creacion")
+  fechaActualizacion      DateTime              @updatedAt @map("fecha_actualizacion")
+  asesor                  Asesor?
+  sesiones                Sesion[]
+  asignaciones            Asignacion[]
+  auditorias              Auditoria[]
+  asignacionesSolicitudes AsignacionSolicitud[]
+
   @@map("usuarios")
 }
 
 model Sesion {
-  id             String   @id @default(uuid()) @db.Uuid
-  usuarioId      Int      @map("usuario_id")
-  tokenHash      String   @unique @map("token_hash")
-  venceEn        DateTime @map("vence_en")
-  fechaCreacion  DateTime @default(now()) @map("fecha_creacion")
-  usuario        Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  id            String   @id @default(uuid()) @db.Uuid
+  usuarioId     Int      @map("usuario_id")
+  tokenHash     String   @unique @map("token_hash")
+  venceEn       DateTime @map("vence_en")
+  fechaCreacion DateTime @default(now()) @map("fecha_creacion")
+  usuario       Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
   @@index([usuarioId, venceEn])
   @@map("sesiones")
 }
@@ -91,49 +129,58 @@ model Grupo {
   opciones           OpcionWhatsapp[]
   conversaciones     Conversacion[]
   asignaciones       Asignacion[]
+
   @@map("grupos")
 }
 
 model Asesor {
-  id                 Int            @id @default(autoincrement())
-  usuarioId          Int            @unique @map("usuario_id")
-  grupoId            Int            @map("grupo_id")
-  activoReparto      Boolean        @default(true) @map("activo_reparto")
-  contadorReparto    Int            @default(0) @map("contador_reparto")
-  totalAsignaciones  Int            @default(0) @map("total_asignaciones")
-  fechaCreacion      DateTime       @default(now()) @map("fecha_creacion")
-  fechaActualizacion DateTime       @updatedAt @map("fecha_actualizacion")
-  usuario            Usuario        @relation(fields: [usuarioId], references: [id])
-  grupo              Grupo          @relation(fields: [grupoId], references: [id])
-  conversaciones     Conversacion[]
-  asignaciones       Asignacion[]
+  id                      Int                   @id @default(autoincrement())
+  usuarioId               Int                   @unique @map("usuario_id")
+  grupoId                 Int                   @map("grupo_id")
+  activoReparto           Boolean               @default(true) @map("activo_reparto")
+  disponible              Boolean               @default(true)
+  contadorReparto         Int                   @default(0) @map("contador_reparto")
+  totalAsignaciones       Int                   @default(0) @map("total_asignaciones")
+  fechaCreacion           DateTime              @default(now()) @map("fecha_creacion")
+  fechaActualizacion      DateTime              @updatedAt @map("fecha_actualizacion")
+  usuario                 Usuario               @relation(fields: [usuarioId], references: [id])
+  grupo                   Grupo                 @relation(fields: [grupoId], references: [id])
+  conversaciones          Conversacion[]
+  asignaciones            Asignacion[]
+  canales                 CanalWhatsapp[]
+  solicitudes             SolicitudReparto[]
+  asignacionesSolicitudes AsignacionSolicitud[]
+
   @@index([grupoId, activoReparto, contadorReparto])
   @@map("asesores")
 }
 
 model OpcionWhatsapp {
-  id                    Int      @id @default(autoincrement())
-  titulo                String
-  descripcion           String?
-  identificadorExterno  String   @unique @map("identificador_externo")
-  grupoId               Int      @map("grupo_id")
-  activo                Boolean  @default(true)
-  orden                 Int      @default(0)
-  fechaCreacion         DateTime @default(now()) @map("fecha_creacion")
-  fechaActualizacion    DateTime @updatedAt @map("fecha_actualizacion")
-  grupo                 Grupo    @relation(fields: [grupoId], references: [id])
+  id                   Int      @id @default(autoincrement())
+  titulo               String
+  descripcion          String?
+  identificadorExterno String   @unique @map("identificador_externo")
+  grupoId              Int      @map("grupo_id")
+  activo               Boolean  @default(true)
+  orden                Int      @default(0)
+  fechaCreacion        DateTime @default(now()) @map("fecha_creacion")
+  fechaActualizacion   DateTime @updatedAt @map("fecha_actualizacion")
+  grupo                Grupo    @relation(fields: [grupoId], references: [id])
+
   @@index([activo, orden])
   @@map("opciones_whatsapp")
 }
 
 model Contacto {
-  id                 Int            @id @default(autoincrement())
-  telefono           String         @unique
+  id                 Int                @id @default(autoincrement())
+  telefono           String             @unique
   nombre             String?
-  waId               String         @unique @map("wa_id")
-  fechaCreacion      DateTime       @default(now()) @map("fecha_creacion")
-  fechaActualizacion DateTime       @updatedAt @map("fecha_actualizacion")
+  waId               String             @unique @map("wa_id")
+  fechaCreacion      DateTime           @default(now()) @map("fecha_creacion")
+  fechaActualizacion DateTime           @updatedAt @map("fecha_actualizacion")
   conversaciones     Conversacion[]
+  solicitudes        SolicitudReparto[]
+
   @@map("contactos")
 }
 
@@ -142,34 +189,45 @@ model Conversacion {
   contactoId         Int                @map("contacto_id")
   grupoId            Int?               @map("grupo_id")
   asesorId           Int?               @map("asesor_id")
+  canalId            Int?               @map("canal_id")
+  solicitudRepartoId Int?               @map("solicitud_reparto_id")
   estado             EstadoConversacion @default(ESPERANDO_OPCION)
   fechaInicio        DateTime           @default(now()) @map("fecha_inicio")
   fechaCierre        DateTime?          @map("fecha_cierre")
   fechaUltimoMensaje DateTime           @default(now()) @map("fecha_ultimo_mensaje")
+  fechaUltimoCliente DateTime?          @map("fecha_ultimo_cliente")
   fechaCreacion      DateTime           @default(now()) @map("fecha_creacion")
   fechaActualizacion DateTime           @updatedAt @map("fecha_actualizacion")
   contacto           Contacto           @relation(fields: [contactoId], references: [id])
   grupo              Grupo?             @relation(fields: [grupoId], references: [id])
   asesor             Asesor?            @relation(fields: [asesorId], references: [id])
+  canal              CanalWhatsapp?     @relation(fields: [canalId], references: [id])
+  solicitudReparto   SolicitudReparto?  @relation(fields: [solicitudRepartoId], references: [id])
   mensajes           Mensaje[]
   asignaciones       Asignacion[]
+
   @@index([asesorId, estado, fechaUltimoMensaje])
   @@index([contactoId, estado])
   @@index([grupoId, estado])
+  @@index([canalId, estado, fechaUltimoMensaje])
+  @@index([contactoId, canalId, estado])
+  @@index([solicitudRepartoId])
   @@map("conversaciones")
 }
 
 model Mensaje {
-  id                  Int              @id @default(autoincrement())
-  conversacionId      Int              @map("conversacion_id")
-  idExternoWhatsapp   String?          @unique @map("id_externo_whatsapp")
-  direccion           DireccionMensaje
-  tipo                TipoMensaje      @default(TEXTO)
-  contenido           String
-  estadoEnvio         EstadoEnvio?     @map("estado_envio")
-  fechaWhatsapp       DateTime?        @map("fecha_whatsapp")
-  fechaCreacion       DateTime         @default(now()) @map("fecha_creacion")
-  conversacion        Conversacion     @relation(fields: [conversacionId], references: [id])
+  id                Int              @id @default(autoincrement())
+  conversacionId    Int              @map("conversacion_id")
+  idExternoWhatsapp String?          @unique @map("id_externo_whatsapp")
+  direccion         DireccionMensaje
+  origen            OrigenMensaje    @default(SISTEMA)
+  tipo              TipoMensaje      @default(TEXTO)
+  contenido         String
+  estadoEnvio       EstadoEnvio?     @map("estado_envio")
+  fechaWhatsapp     DateTime?        @map("fecha_whatsapp")
+  fechaCreacion     DateTime         @default(now()) @map("fecha_creacion")
+  conversacion      Conversacion     @relation(fields: [conversacionId], references: [id])
+
   @@index([conversacionId, fechaCreacion])
   @@map("mensajes")
 }
@@ -187,6 +245,7 @@ model Asignacion {
   asesor               Asesor         @relation(fields: [asesorId], references: [id])
   grupo                Grupo          @relation(fields: [grupoId], references: [id])
   asignadoPor          Usuario?       @relation(fields: [asignadoPorUsuarioId], references: [id])
+
   @@index([conversacionId, fechaCreacion])
   @@map("asignaciones")
 }
@@ -201,19 +260,99 @@ model EventoWhatsapp {
   error                String?
   fechaCreacion        DateTime     @default(now()) @map("fecha_creacion")
   fechaActualizacion   DateTime     @updatedAt @map("fecha_actualizacion")
+
   @@index([estado, fechaCreacion])
   @@map("eventos_whatsapp")
 }
 
 model Auditoria {
-  id          Int      @id @default(autoincrement())
-  usuarioId   Int?     @map("usuario_id")
-  accion      String
-  entidad     String
-  entidadId   String   @map("entidad_id")
-  datos       Json?
-  fecha       DateTime @default(now())
-  usuario     Usuario? @relation(fields: [usuarioId], references: [id])
+  id        Int      @id @default(autoincrement())
+  usuarioId Int?     @map("usuario_id")
+  accion    String
+  entidad   String
+  entidadId String   @map("entidad_id")
+  datos     Json?
+  fecha     DateTime @default(now())
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
+
   @@index([fecha])
   @@map("auditoria")
+}
+
+model CanalWhatsapp {
+  id                 Int                @id @default(autoincrement())
+  tipo               TipoCanalWhatsapp
+  nombre             String
+  numeroVisible      String?            @unique @map("numero_visible")
+  phoneNumberId      String?            @unique @map("phone_number_id")
+  wabaId             String?            @map("waba_id")
+  asesorId           Int?               @map("asesor_id")
+  activo             Boolean            @default(false)
+  modoCoexistencia   Boolean            @default(false) @map("modo_coexistencia")
+  estadoIntegracion  EstadoIntegracion  @default(PENDIENTE_CONFIGURACION) @map("estado_integracion")
+  fechaAlta          DateTime           @default(now()) @map("fecha_alta")
+  fechaBaja          DateTime?          @map("fecha_baja")
+  fechaCreacion      DateTime           @default(now()) @map("fecha_creacion")
+  fechaActualizacion DateTime           @updatedAt @map("fecha_actualizacion")
+  asesor             Asesor?            @relation(fields: [asesorId], references: [id])
+  solicitudesOrigen  SolicitudReparto[] @relation("CanalOrigen")
+  solicitudesAsesor  SolicitudReparto[] @relation("CanalAsesor")
+  conversaciones     Conversacion[]
+
+  @@index([asesorId, activo])
+  @@map("canales_whatsapp")
+}
+
+model SolicitudReparto {
+  id                  Int                    @id @default(autoincrement())
+  contactoId          Int                    @map("contacto_id")
+  canalOrigenId       Int                    @map("canal_origen_id")
+  asesorId            Int?                   @map("asesor_id")
+  canalAsesorId       Int?                   @map("canal_asesor_id")
+  idExternoOrigen     String                 @unique @map("id_externo_origen")
+  contenidoInicial    String                 @map("contenido_inicial")
+  estado              EstadoSolicitudReparto @default(NUEVA)
+  fechaRecepcion      DateTime               @default(now()) @map("fecha_recepcion")
+  fechaAsignacion     DateTime?              @map("fecha_asignacion")
+  fechaPrimerContacto DateTime?              @map("fecha_primer_contacto")
+  fechaCierre         DateTime?              @map("fecha_cierre")
+  fechaCreacion       DateTime               @default(now()) @map("fecha_creacion")
+  fechaActualizacion  DateTime               @updatedAt @map("fecha_actualizacion")
+  contacto            Contacto               @relation(fields: [contactoId], references: [id])
+  canalOrigen         CanalWhatsapp          @relation("CanalOrigen", fields: [canalOrigenId], references: [id])
+  asesor              Asesor?                @relation(fields: [asesorId], references: [id])
+  canalAsesor         CanalWhatsapp?         @relation("CanalAsesor", fields: [canalAsesorId], references: [id])
+  conversaciones      Conversacion[]
+  asignaciones        AsignacionSolicitud[]
+
+  @@index([asesorId, estado, fechaRecepcion])
+  @@index([contactoId, estado])
+  @@index([canalOrigenId, estado])
+  @@map("solicitudes_reparto")
+}
+
+model AsignacionSolicitud {
+  id                   Int              @id @default(autoincrement())
+  solicitudId          Int              @map("solicitud_id")
+  asesorId             Int              @map("asesor_id")
+  tipo                 TipoAsignacion
+  asignadoPorUsuarioId Int?             @map("asignado_por_usuario_id")
+  motivo               String?
+  fechaCreacion        DateTime         @default(now()) @map("fecha_creacion")
+  solicitud            SolicitudReparto @relation(fields: [solicitudId], references: [id])
+  asesor               Asesor           @relation(fields: [asesorId], references: [id])
+  asignadoPor          Usuario?         @relation(fields: [asignadoPorUsuarioId], references: [id])
+
+  @@index([solicitudId, fechaCreacion])
+  @@map("asignaciones_solicitud")
+}
+
+model ConfiguracionWhatsapp {
+  id                    Int      @id @default(1)
+  nombrePlantillaInicio String?  @map("nombre_plantilla_inicio")
+  idiomaPlantillaInicio String   @default("es") @map("idioma_plantilla_inicio")
+  mensajeEspera         String   @default("En un momento lo atendemos.") @map("mensaje_espera")
+  fechaActualizacion    DateTime @updatedAt @map("fecha_actualizacion")
+
+  @@map("configuracion_whatsapp")
 }

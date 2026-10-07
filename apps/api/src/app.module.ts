@@ -7,6 +7,8 @@ import { ServicioReparto } from './reparto';
 import { TiempoReal, TiempoRealController } from './tiempo-real';
 import { ProveedorWhatsAppMeta, ProveedorWhatsAppMock, PROVEEDOR_WHATSAPP } from './proveedor-whatsapp';
 import { ServicioEntradas } from './entradas';
+import { ServicioOperacionV2 } from './operacion-v2';
+import { CanalesWhatsappController, ConfiguracionWhatsappController, SolicitudesRepartoController } from './operacion-v2.controller';
 import { ColaWhatsapp } from './cola';
 import { WebhookController } from './webhook';
 import { SimuladorController } from './simulador';
@@ -28,13 +30,13 @@ class SaludController {
 }
 
 @Module({
-  controllers: [SaludController, AuthController, TiempoRealController, WebhookController, SimuladorController, ConversacionesController, GruposController, AsesoresController, OpcionesController, UsuariosController, DashboardController, AuditoriaController, ConfiguracionController],
+  controllers: [SaludController, AuthController, TiempoRealController, WebhookController, SimuladorController, ConversacionesController, CanalesWhatsappController, ConfiguracionWhatsappController, SolicitudesRepartoController, GruposController, AsesoresController, OpcionesController, UsuariosController, DashboardController, AuditoriaController, ConfiguracionController],
   providers: [
     { provide: 'CONFIG', useFactory: leerConfiguracion },
     BaseDatos, GuardiaSesion, ProteccionLogin, { provide: APP_GUARD, useExisting: GuardiaSesion },
     ServicioReparto, TiempoReal, ProveedorWhatsAppMock, ProveedorWhatsAppMeta,
     { provide: PROVEEDOR_WHATSAPP, useFactory: (config: ReturnType<typeof leerConfiguracion>, mock: ProveedorWhatsAppMock, meta: ProveedorWhatsAppMeta) => config.whatsappMode === 'meta' ? meta : mock, inject: ['CONFIG', ProveedorWhatsAppMock, ProveedorWhatsAppMeta] },
-    ServicioEntradas, ColaWhatsapp, ServicioConversaciones,
+    ServicioOperacionV2, ServicioEntradas, ColaWhatsapp, ServicioConversaciones,
   ],
 })
 export class AppModule {}

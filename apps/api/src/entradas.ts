@@ -4,19 +4,27 @@ import { ServicioReparto } from './reparto';
 import { TiempoReal } from './tiempo-real';
 import { PROVEEDOR_WHATSAPP, ProveedorWhatsApp, OpcionMenu } from './proveedor-whatsapp';
 import { Prisma, TipoMensaje } from '@prisma/client';
+import { EcoCanal, MensajeCanal, ServicioOperacionV2 } from './operacion-v2';
 
 export interface EntradaCliente { idExterno: string; waId: string; telefono: string; nombre?: string; tipo: 'TEXTO' | 'INTERACTIVO'; contenido: string; opcionId?: string; fechaWhatsapp?: string; }
 interface SalidaPendiente { id: number; tipo: TipoMensaje; contenido: string; waId: string; }
 
 @Injectable()
 export class ServicioEntradas {
-  constructor(private readonly db: BaseDatos, private readonly reparto: ServicioReparto, private readonly tiempoReal: TiempoReal, @Inject(PROVEEDOR_WHATSAPP) private readonly proveedor: ProveedorWhatsApp) {}
+  constructor(private readonly db: BaseDatos, private readonly reparto: ServicioReparto, private readonly tiempoReal: TiempoReal, private readonly operacionV2: ServicioOperacionV2, @Inject(PROVEEDOR_WHATSAPP) private readonly proveedor: ProveedorWhatsApp) {}
 
   async registrar(idExterno: string, tipo: string, payload: Prisma.InputJsonValue): Promise<void> {
     await this.db.eventoWhatsapp.upsert({ where: { identificadorExterno: idExterno }, create: { identificadorExterno: idExterno, tipo, payload }, update: {} });
   }
 
   async procesar(idExterno: string): Promise<void> {
+    const pendiente = await this.db.eventoWhatsapp.findUniqueOrThrow({ where: { identificadorExterno: idExterno } });
+    if (pendiente.tipo === 'mensaje_canal') return this.operacionV2.procesarMensaje(idExterno, pendiente.payload as unknown as MensajeCanal);
+    if (pendiente.tipo === 'eco_canal') return this.operacionV2.procesarEco(idExterno, pendiente.payload as unknown as EcoCanal);
+    if (pendiente.tipo === 'desconocido') {
+      await this.db.eventoWhatsapp.updateMany({ where: { identificadorExterno: idExterno, estado: { not: 'PROCESADO' } }, data: { estado: 'PROCESADO' } });
+      return;
+    }
     const resultado = await this.db.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM eventos_whatsapp WHERE identificador_externo = ${idExterno} FOR UPDATE`;
       const evento = await tx.eventoWhatsapp.findUniqueOrThrow({ where: { identificadorExterno: idExterno } });
@@ -38,7 +46,7 @@ export class ServicioEntradas {
       if (!entrada.waId || !entrada.idExterno) throw new ConflictException('Evento de entrada inválido');
       const contacto = await tx.contacto.upsert({ where: { waId: entrada.waId }, create: { waId: entrada.waId, telefono: entrada.telefono, nombre: entrada.nombre }, update: entrada.nombre ? { nombre: entrada.nombre } : {} });
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(42018, CAST(${contacto.id} AS integer))::text`;
-      let conversacion = await tx.conversacion.findFirst({ where: { contactoId: contacto.id, estado: { not: 'CERRADA' } }, orderBy: { id: 'desc' } });
+      let conversacion = await tx.conversacion.findFirst({ where: { contactoId: contacto.id, canalId: null, estado: { not: 'CERRADA' } }, orderBy: { id: 'desc' } });
       const nueva = !conversacion;
       if (!conversacion) conversacion = await tx.conversacion.create({ data: { contactoId: contacto.id } });
       const existente = await tx.mensaje.findUnique({ where: { idExternoWhatsapp: entrada.idExterno } });

@@ -6,13 +6,16 @@ import { ServicioEntradas } from '../src/entradas';
 import { ServicioConversaciones } from '../src/conversaciones';
 import { ProveedorWhatsAppMock } from '../src/proveedor-whatsapp';
 import { TiempoReal } from '../src/tiempo-real';
+import { ServicioOperacionV2 } from '../src/operacion-v2';
+import { Configuracion } from '../src/config';
 
 const db = new BaseDatos();
 const reparto = new ServicioReparto(db);
 const tiempoReal = new TiempoReal();
 const proveedor = new ProveedorWhatsAppMock();
-const entradas = new ServicioEntradas(db, reparto, tiempoReal, proveedor);
-const conversaciones = new ServicioConversaciones(db, reparto, tiempoReal, proveedor);
+const operacionV2 = new ServicioOperacionV2(db, reparto, tiempoReal, proveedor);
+const entradas = new ServicioEntradas(db, reparto, tiempoReal, operacionV2, proveedor);
+const conversaciones = new ServicioConversaciones(db, reparto, tiempoReal, { whatsappMode: 'mock' } as Configuracion, proveedor);
 const sufijo = randomUUID().slice(0, 8);
 let grupoId: number; let otroGrupoId: number;
 const usuarioIds: number[] = []; const asesorIds: number[] = []; const contactoIds: number[] = []; const conversacionIds: number[] = []; const eventos: string[] = [];

@@ -10,8 +10,8 @@ import { Configuracion } from './config';
 class GrupoDto { @IsString() @MaxLength(100) nombre!: string; @IsOptional() @IsString() @MaxLength(500) descripcion?: string; }
 class GrupoPatchDto { @IsOptional() @IsString() @MaxLength(100) nombre?: string; @IsOptional() @IsString() @MaxLength(500) descripcion?: string; @IsOptional() @IsBoolean() activo?: boolean; }
 class AsesorDto { @IsInt() usuarioId!: number; @IsInt() grupoId!: number; @IsOptional() @IsBoolean() activoReparto?: boolean; }
-class AsesorPatchDto { @IsOptional() @IsInt() grupoId?: number; @IsOptional() @IsBoolean() activoReparto?: boolean; }
-class DisponibilidadDto { @IsBoolean() activoReparto!: boolean; }
+class AsesorPatchDto { @IsOptional() @IsInt() grupoId?: number; @IsOptional() @IsBoolean() activoReparto?: boolean; @IsOptional() @IsBoolean() disponible?: boolean; }
+class DisponibilidadDto { @IsOptional() @IsBoolean() activoReparto?: boolean; @IsOptional() @IsBoolean() disponible?: boolean; }
 class OpcionDto { @IsString() @MaxLength(24) titulo!: string; @IsOptional() @IsString() @MaxLength(72) descripcion?: string; @IsString() @MaxLength(200) identificadorExterno!: string; @IsInt() grupoId!: number; @IsInt() orden!: number; @IsOptional() @IsBoolean() activo?: boolean; }
 class OpcionPatchDto { @IsOptional() @IsString() @MaxLength(24) titulo?: string; @IsOptional() @IsString() @MaxLength(72) descripcion?: string; @IsOptional() @IsString() @MaxLength(200) identificadorExterno?: string; @IsOptional() @IsInt() grupoId?: number; @IsOptional() @IsInt() orden?: number; @IsOptional() @IsBoolean() activo?: boolean; }
 class UsuarioDto { @IsString() @MaxLength(80) nombre!: string; @IsString() @MaxLength(80) apellido!: string; @IsEmail() correo!: string; @IsString() @MinLength(12) password!: string; @IsEnum(Rol) rol!: Rol; }
@@ -45,7 +45,8 @@ export class AsesoresController {
     });
   }
   @Patch(':id/disponibilidad') @Roles('ADMIN', 'RRHH') async disponibilidad(@Param('id', ParseIntPipe) id: number, @Body() dto: DisponibilidadDto, @UsuarioActual() usuario: UsuarioSesion) {
-    return this.editar(id, { activoReparto: dto.activoReparto }, usuario);
+    if (dto.activoReparto === undefined && dto.disponible === undefined) throw new BadRequestException('Indica activoReparto o disponible');
+    return this.editar(id, dto, usuario);
   }
   @Patch(':id') @Roles('ADMIN') async actualizar(@Param('id', ParseIntPipe) id: number, @Body() dto: AsesorPatchDto, @UsuarioActual() usuario: UsuarioSesion) { return this.editar(id, dto, usuario); }
   private async editar(id: number, dto: AsesorPatchDto, usuario: UsuarioSesion) {
@@ -119,12 +120,14 @@ export class DashboardController {
   constructor(private readonly db: BaseDatos) {}
   @Get() async obtener() {
     const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-    const [abiertas, pendientes, activos, inactivos, asignacionesHoy] = await Promise.all([
-      this.db.conversacion.count({ where: { estado: 'ABIERTA' } }), this.db.conversacion.count({ where: { estado: 'PENDIENTE_ASIGNACION' } }),
-      this.db.asesor.count({ where: { activoReparto: true, usuario: { activo: true } } }), this.db.asesor.count({ where: { activoReparto: false } }),
-      this.db.asignacion.count({ where: { fechaCreacion: { gte: hoy } } }),
+    const [abiertas, pendientes, activos, inactivos, asignacionesHoy, solicitudesPendientes, solicitudesHoy] = await Promise.all([
+      this.db.conversacion.count({ where: { estado: 'ABIERTA', canal: { tipo: 'ASESOR' } } }), this.db.conversacion.count({ where: { estado: 'PENDIENTE_ASIGNACION' } }),
+      this.db.asesor.count({ where: { activoReparto: true, disponible: true, usuario: { activo: true }, canales: { some: { activo: true, tipo: 'ASESOR', estadoIntegracion: 'ACTIVO' } } } }), this.db.asesor.count({ where: { OR: [{ activoReparto: false }, { disponible: false }] } }),
+      this.db.asignacionSolicitud.count({ where: { fechaCreacion: { gte: hoy } } }),
+      this.db.solicitudReparto.count({ where: { estado: 'NUEVA' } }),
+      this.db.solicitudReparto.count({ where: { fechaRecepcion: { gte: hoy } } }),
     ]);
-    return { abiertas, pendientes, activos, inactivos, asignacionesHoy };
+    return { abiertas, pendientesLegado: pendientes, activos, inactivos, asignacionesHoy, solicitudesPendientes, solicitudesHoy };
   }
 }
 
@@ -136,7 +139,7 @@ export class AuditoriaController {
 
 @Controller('configuracion') @Roles('ADMIN')
 export class ConfiguracionController {
-  constructor(@Inject('CONFIG') private readonly config: Configuracion) {}
+  constructor(@Inject('CONFIG') private readonly config: Configuracion, private readonly db: BaseDatos) {}
   @Get('estado') @Roles('ADMIN', 'SUPERVISOR', 'RRHH', 'ASESOR') estado() { return { modo: this.config.whatsappMode, simuladorDisponible: this.config.nodeEnv !== 'production' && this.config.whatsappMode === 'mock' }; }
-  @Get('whatsapp') whatsapp() { return { modo: this.config.whatsappMode, phoneNumberIdConfigurado: Boolean(this.config.metaPhoneNumberId), wabaIdConfigurado: Boolean(this.config.metaWabaId), accessTokenConfigurado: Boolean(this.config.metaAccessToken), appSecretConfigurado: Boolean(this.config.metaAppSecret), verifyTokenConfigurado: Boolean(this.config.metaVerifyToken), webhook: `${this.config.apiUrl}/webhooks/meta/whatsapp`, numeroVisible: this.config.whatsappDisplayNumber || null }; }
+  @Get('whatsapp') async whatsapp() { return { modo: this.config.whatsappMode, canalesConfigurados: await this.db.canalWhatsapp.count({ where: { activo: true, estadoIntegracion: 'ACTIVO' } }), phoneNumberIdLegadoConfigurado: Boolean(this.config.metaPhoneNumberId), accessTokenConfigurado: Boolean(this.config.metaAccessToken), appSecretConfigurado: Boolean(this.config.metaAppSecret), verifyTokenConfigurado: Boolean(this.config.metaVerifyToken), webhook: `${this.config.apiUrl}/webhooks/meta/whatsapp` }; }
 }

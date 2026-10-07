@@ -55,7 +55,7 @@ export function leerConfiguracion(env: NodeJS.ProcessEnv = process.env): Configu
     if (!config.webUrl.startsWith('https://') || !config.apiUrl.startsWith('https://')) throw new Error('WEB_URL y API_URL deben usar HTTPS en producción');
   }
   if (modo === 'meta') {
-    for (const nombre of ['META_GRAPH_API_VERSION', 'META_WHATSAPP_ACCESS_TOKEN', 'META_WHATSAPP_PHONE_NUMBER_ID', 'META_WHATSAPP_BUSINESS_ACCOUNT_ID', 'META_APP_SECRET', 'META_WEBHOOK_VERIFY_TOKEN']) requerir(nombre);
+    for (const nombre of ['META_GRAPH_API_VERSION', 'META_WHATSAPP_ACCESS_TOKEN', 'META_APP_SECRET', 'META_WEBHOOK_VERIFY_TOKEN']) requerir(nombre);
     if (!/^v\d+\.\d+$/.test(config.metaGraphApiVersion!)) throw new Error('META_GRAPH_API_VERSION debe tener formato vN.N');
   }
   if (!Number.isInteger(config.puerto) || config.puerto < 1) throw new Error('PUERTO_API inválido');

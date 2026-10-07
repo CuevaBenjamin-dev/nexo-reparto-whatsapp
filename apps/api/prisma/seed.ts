@@ -31,6 +31,19 @@ async function main() {
       { titulo: 'Otros', identificadorExterno: 'otros', grupoId: corporativo.id, orden: 4 },
     ];
     for (const opcion of opciones) await db.opcionWhatsapp.upsert({ where: { identificadorExterno: opcion.identificadorExterno }, create: opcion, update: {} });
+    if ((process.env.WHATSAPP_MODE || 'mock') === 'mock') {
+      await db.configuracionWhatsapp.upsert({ where: { id: 1 }, create: { id: 1, nombrePlantillaInicio: 'plantilla_inicio_demo', idiomaPlantillaInicio: 'es' }, update: {} });
+      if (!await db.canalWhatsapp.findFirst({ where: { tipo: 'REPARTIDOR', activo: true } })) {
+        await db.canalWhatsapp.create({ data: { tipo: 'REPARTIDOR', nombre: 'Repartidor demo', numeroVisible: 'DEMO-REPARTIDOR', phoneNumberId: 'mock-repartidor', wabaId: 'mock-waba', activo: true, estadoIntegracion: 'ACTIVO' } });
+      }
+      for (const nombre of ['Andrea', 'Carlos', 'Lucía', 'Miguel']) {
+        const correo = `${nombre.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()}@local.test`;
+        const asesor = await db.asesor.findFirstOrThrow({ where: { usuario: { correo } } });
+        if (!await db.canalWhatsapp.findFirst({ where: { asesorId: asesor.id, tipo: 'ASESOR', activo: true } })) {
+          await db.canalWhatsapp.create({ data: { tipo: 'ASESOR', nombre: `Canal demo ${nombre}`, numeroVisible: `DEMO-ASESOR-${asesor.id}`, phoneNumberId: `mock-asesor-${asesor.id}`, wabaId: 'mock-waba', asesorId: asesor.id, activo: true, modoCoexistencia: true, estadoIntegracion: 'ACTIVO' } });
+        }
+      }
+    }
     console.log(JSON.stringify({ evento: 'seed_desarrollo_completo', usuarios: cuentas.map(c => c.correo), password: 'Valor de ADMIN_INICIAL_PASSWORD o contraseña local documentada' }));
   } finally { await db.$disconnect(); }
 }
