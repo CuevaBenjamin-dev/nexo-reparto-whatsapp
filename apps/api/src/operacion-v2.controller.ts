@@ -58,11 +58,16 @@ export class CanalesWhatsappController {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(42021, 1)::text`;
       const anterior = await tx.canalWhatsapp.findUnique({ where: { id } });
       if (!anterior) throw new NotFoundException('Canal inexistente');
-      const unido = { ...anterior, ...dto };
+      const cambios = Object.fromEntries(
+        Object.entries(dto).filter(([, valor]) => valor !== undefined)
+      ) as CanalPatchDto;
+
+      const unido = { ...anterior, ...cambios };
+
       await this.validar(tx, unido, id);
       if (anterior.activo && dto.phoneNumberId && dto.phoneNumberId !== anterior.phoneNumberId) throw new ConflictException('Desactiva el canal antes de cambiar el Phone Number ID');
       if (anterior.activo && dto.asesorId && dto.asesorId !== anterior.asesorId) throw new ConflictException('Desactiva el canal antes de cambiar de asesor');
-      const canal = await tx.canalWhatsapp.update({ where: { id }, data: { ...dto, fechaBaja: dto.activo === false ? new Date() : dto.activo === true ? null : undefined } });
+      const canal = await tx.canalWhatsapp.update({ where: { id }, data: { ...cambios, fechaBaja: dto.activo === false ? new Date() : dto.activo === true ? null : undefined } });
       await tx.auditoria.create({ data: { usuarioId: usuario.id, accion: canal.activo ? 'EDITAR_CANAL' : 'DESACTIVAR_CANAL', entidad: 'canales_whatsapp', entidadId: String(id), datos: { anterior: { activo: anterior.activo, asesorId: anterior.asesorId, phoneNumberId: anterior.phoneNumberId }, nuevo: { activo: canal.activo, asesorId: canal.asesorId, phoneNumberId: canal.phoneNumberId } } } });
       return canal;
     });
